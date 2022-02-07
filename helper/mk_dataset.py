@@ -86,7 +86,9 @@ class InitDataset(Dataset):
 
       #Convert networkx to torch_geometric graph
       gg = from_networkx(g)
-      gg.x = g.nodes.data["mean color"]
-      gg.edge_attr = g.edges.data["agg_weights"]
+      gg.x = gg["mean color"]
+      gg.pos = gg["centroid"]
+      gg.edge_attr = gg["agg_weights"]
+
       sample = {'image': image, 'tensor_image': tensor_image, "segments": segments, "graph": gg, "networkx": g}
       return sample
