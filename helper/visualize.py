@@ -1,4 +1,3 @@
-
 def visualize_segments(dataset, idx = 0):
   """
   Plots the boundaries of segments from a torch Dataset object.
@@ -17,6 +16,17 @@ def visualize_segments(dataset, idx = 0):
   plt.show()
 
 def visualize_rag_graph(dataset, idx = 0):
+  """
+  Plot rag mean-color graph on top of original picture
+  Args:
+    torch dataset-object containing "image" and "segments"
+    idx of the graph to be displayed
+  Requirements:
+    matplotlib.pyplot as plt
+    numpy as np
+    torch
+    skimage.future.graph
+  """
   img = np.array(dataset[idx]["image"])
   segments = np.array(dataset[idx]["segments"])
   g = graph.rag_mean_color(img, segments)
@@ -33,6 +43,7 @@ def visualize_rag_graph(dataset, idx = 0):
   lc = graph.show_rag(segments, g, img, ax=ax[0], border_color ="white")
   fig.colorbar(lc, fraction=0.1, ax=ax[0])
 
+  #Plot again on white background
   ax[1].set_title('RAG drawn with grayscale image and viridis colormap')
   lc = graph.show_rag(segments, g, dummy,
                       img_cmap='gray', 
