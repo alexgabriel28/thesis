@@ -46,11 +46,18 @@ class InitDataset(Dataset):
       file_list = glob.glob(self.imgs_path + "*")
       print(file_list)
       self.data = []
+      self.img_path = []
+      self.class_name = []
       for class_path in file_list:
           class_name = class_path.split("/")[-1]
           for img_path in glob.glob(class_path + "/*.png"):
               self.data.append([img_path, class_name])
+              self.img_path.append(img_path)
+              self.class_name.append(class_name)
       print(self.data)
+      print(self.img_path)
+      print(self.class_name)
+
       self.class_map = {"fold" : 0, "regular": 1, "gap": 2}
       self.root_dir = root_dir
       self.transform = transform
@@ -60,11 +67,14 @@ class InitDataset(Dataset):
       return len(self.data)
 
   def __getitem__(self, idx):
-      img_path, class_name = self.data[idx]
+      img_path = self.img_path[idx]
+      class_name = self.class_name[idx]
+      print(img_path)
+      print(class_name)
       if torch.is_tensor(idx):
           idx = idx.tolist()
 
-      image = Image.open(img_path).convert("RGB")
+      image = Image.open(str(img_path)).convert("RGB")
 
       class_id = self.class_map[class_name]
       class_id = torch.tensor([class_id])
