@@ -9,6 +9,7 @@ from torch_geometric.utils import from_networkx
 from skimage.future import graph
 from skimage import measure
 import networkx as nx
+import glob
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -41,20 +42,32 @@ class InitDataset(Dataset):
           networkx
           dir_length (helper submodule)
       """
+      self.imgs_path = root_dir
+      file_list = glob.glob(self.imgs_path + "*")
+      print(file_list)
+      self.data = []
+      for class_path in file_list:
+          class_name = class_path.split("/")[-1]
+          for img_path in glob.glob(class_path + "/*.png"):
+              self.data.append([img_path, class_name])
+      print(self.data)
+      self.class_map = {"fold" : 0, "regular": 1, "gap": 2}
       self.root_dir = root_dir
       self.transform = transform
       self.dir_list = os.listdir(self.root_dir)
 
   def __len__(self):
-      return dir_length(self.root_dir)
+      return len(self.data)
 
   def __getitem__(self, idx):
+      img_path, class_name = self.data[idx]
       if torch.is_tensor(idx):
           idx = idx.tolist()
 
-      img_name = os.path.join(self.root_dir,
-                              self.dir_list[idx])
-      image = Image.open(img_name).convert("RGB")
+      image = Image.open(img_path).convert("RGB")
+
+      class_id = self.class_map[class_name]
+      class_id = torch.tensor([class_id])
 
       if self.transform:
           image = self.transform(image)
@@ -95,6 +108,7 @@ class InitDataset(Dataset):
       gg.x = gg["mean color"]
       gg.pos = gg["centroid"]
       gg.edge_attr = gg["agg_weights"]
+      gg.y = class_id
 
-      sample = {'image': image, 'tensor_image': tensor_image, "segments": segments, "graph": gg, "networkx": g}
+      sample = {'image': image, 'tensor_image': tensor_image, "segments": segments, "graph": gg, "networkx": g, "class_id": class_id}
       return sample
