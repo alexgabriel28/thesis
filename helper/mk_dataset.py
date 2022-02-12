@@ -1,5 +1,6 @@
 import os
 import torch
+import numpy as np
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
 import torchvision.transforms.functional as TF
@@ -19,6 +20,20 @@ def dir_length(dir):
       if os.path.isfile(os.path.join(dir, path)):
           initial_count += 1
   return initial_count
+
+def collate_batch(batch):
+  
+  timage_list, graph_list, = [], []
+  
+  for _timage, _graph in batch:
+    timage_list.append(_timage)
+    graph_list.append(_graph)
+  
+  #timage_list = torch.tensor(timage_list, dtype=torch.int64)
+  
+  #graph_list = torch_geometric.data.Data(graph_list, batch_first=True, padding_value=0)
+  
+  return timage_list, graph_list
 
 class InitDataset(Dataset):
   import torch
@@ -69,8 +84,6 @@ class InitDataset(Dataset):
   def __getitem__(self, idx):
       img_path = self.img_path[idx]
       class_name = self.class_name[idx]
-      print(img_path)
-      print(class_name)
       if torch.is_tensor(idx):
           idx = idx.tolist()
 
@@ -111,14 +124,16 @@ class InitDataset(Dataset):
             (abs(g.nodes[i]["centroid"][0] - g.nodes[j]["centroid"][0])), 
             abs(g.nodes[i]["centroid"][1] - g.nodes[j]["centroid"][1])
             )
-        g[i][j]["agg_weights"] = (g[i][j]["weight"], g[i][j]["manhattan"][0]/25.5, g[i][j]["manhattan"][1]/25.5)
+        g[i][j]["agg_weights"] = (g[i][j]["weight"], g[i][j]["manhattan"][0], g[i][j]["manhattan"][1])
 
       #Convert networkx to torch_geometric graph
       gg = from_networkx(g)
+      gg["mean color"][:,1] = gg["centroid"][:,0]/255
+      gg["mean color"][:,2] = gg["centroid"][:,1]/255
       gg.x = gg["mean color"]
       gg.pos = gg["centroid"]
       gg.edge_attr = gg["agg_weights"]
       gg.y = class_id
 
-      sample = {'image': image, 'tensor_image': tensor_image, "segments": segments, "graph": gg, "networkx": g, "class_id": class_id}
-      return sample
+      sample = {'image': np.array(image), 'tensor_image': tensor_image, "segments": segments, "graph": gg, "networkx": g, "class_id": class_id}
+      return sample["tensor_image"], sample["graph"]
