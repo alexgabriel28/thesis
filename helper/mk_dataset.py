@@ -1,16 +1,20 @@
 import os
-import torch
 import numpy as np
+import glob
+
+import torch
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
 import torchvision.transforms.functional as TF
+from torch_geometric.utils import from_networkx
+import networkx as nx
+
 from skimage.segmentation import slic, mark_boundaries
 from skimage.util import img_as_float
-from torch_geometric.utils import from_networkx
 from skimage.future import graph
 from skimage import measure
-import networkx as nx
-import glob
+from PIL import Image
+
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
