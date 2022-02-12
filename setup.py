@@ -5,5 +5,5 @@ setup(
     description = "Master Thesis <> Continual Learning in Composite Production",
     name = "master-thesis",
     version = "0.1.0",
-    packages = find_packages(include = ["master-thesis", "master-thesis.*"]),
+    packages = find_packages(include = ["master-thesis", "master-thesis.*"])
 )

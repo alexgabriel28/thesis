@@ -15,6 +15,14 @@ import glob
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def dir_length(dir):
+    """
+
+    Args:
+      dir: 
+
+    Returns:
+
+    """
   initial_count = 0
   for path in os.listdir(dir):
       if os.path.isfile(os.path.join(dir, path)):
@@ -22,6 +30,14 @@ def dir_length(dir):
   return initial_count
 
 def collate_batch(batch):
+    """
+
+    Args:
+      batch: 
+
+    Returns:
+
+    """
   
   timage_list, graph_list, = [], []
   
@@ -36,6 +52,7 @@ def collate_batch(batch):
   return timage_list, graph_list
 
 class InitDataset(Dataset):
+    """ """
   import torch
   """Face Landmarks dataset."""
   def __init__(self, root_dir, transform=None):

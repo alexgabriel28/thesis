@@ -1,9 +1,15 @@
 def visualize_segments(dataset, idx = 0):
-  """
-  Plots the boundaries of segments from a torch Dataset object.
-  Input: dataset with the following attr: image, segments, idx img to plot
-  Requirements: torch, skimage(img_as_float)
-  """
+    """Plots the boundaries of segments from a torch Dataset object.
+      Input: dataset with the following attr: image, segments, idx img to plot
+      Requirements: torch, skimage(img_as_float)
+
+    Args:
+      dataset: 
+      idx:  (Default value = 0)
+
+    Returns:
+
+    """
   device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
   fig, ax = plt.subplots(1, figsize=(10, 10))
@@ -16,17 +22,19 @@ def visualize_segments(dataset, idx = 0):
   plt.show()
 
 def visualize_rag_graph(dataset, idx = 0):
-  """
-  Plot rag mean-color graph on top of original picture
-  Args:
-    torch dataset-object containing "image" and "segments"
-    idx of the graph to be displayed
-  Requirements:
-    matplotlib.pyplot as plt
+    """Plot rag mean-color graph on top of original picture
+
+    Args:
+      Requirements: matplotlib.pyplot as plt
     numpy as np
     torch
     skimage.future.graph
-  """
+      dataset: 
+      idx:  (Default value = 0)
+
+    Returns:
+
+    """
   img = np.array(dataset[idx]["image"])
   segments = np.array(dataset[idx]["segments"])
   g = graph.rag_mean_color(img, segments)
@@ -60,6 +68,17 @@ def visualize_rag_graph(dataset, idx = 0):
   plt.show()
 
 def visualize_embedding(h, color, epoch=None, loss=None):
+    """
+
+    Args:
+      h: 
+      color: 
+      epoch:  (Default value = None)
+      loss:  (Default value = None)
+
+    Returns:
+
+    """
     plt.figure(figsize=(7,7))
     plt.xticks([])
     plt.yticks([])
