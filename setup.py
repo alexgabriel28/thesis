@@ -1,4 +1,4 @@
-from setuptools import setup, find_package
+from setuptools import setup, find_packages
 
 setup(
     author = "Alexander Gabriel",
