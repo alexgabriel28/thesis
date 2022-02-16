@@ -1,15 +1,15 @@
 import torch.nn as nn
 import torch_geometric
 
-class GraphClassificationModel(torch.nn.Module):
+class GraphClassificationModel(nn.Module):
     def __init__(self, 
-                 layer_type, 
-                 num_layers=5, 
+                 layer_type = torch_geometric.nn.GATv2Conv, 
+                 num_layers=6, 
                  num_heads = 1,
                  edge_dim = 3,
                  sz_in=3, 
                  sz_hid=64, 
-                 sz_out=1024,
+                 sz_out=2048,
                  add_self_loops = True,
                  concat = False,
                  dropout = 0.3
@@ -26,12 +26,12 @@ class GraphClassificationModel(torch.nn.Module):
             layers.append(layer_type(in_channels = self.sz_hid, out_channels = self.sz_hid*2, heads = num_heads, edge_dim = edge_dim, dropout = dropout, concat= concat, add_self_loops = add_self_loops))
             layers.append(nn.ReLU())
             self.sz_hid *= 2
-        layers.append(layer_type(in_channels = self.sz_hid, out_channels = 2*sz_hid, heads = num_heads, edge_dim = edge_dim, dropout = dropout, concat= concat, add_self_loops = add_self_loops))
+        layers.append(layer_type(in_channels = self.sz_hid, out_channels = 2*self.sz_hid, heads = num_heads, edge_dim = edge_dim, dropout = dropout, concat= concat, add_self_loops = add_self_loops))
         self.layers = nn.ModuleList(layers)
         self.sz_hid *= 2
 
         # Final classifier
-        self.fc = nn.Linear(sz_hid, sz_out)
+        self.fc = nn.Linear(self.sz_hid, sz_out)
         self.f = nn.Linear(32, 3)
         
         #Use only for supervised classification
