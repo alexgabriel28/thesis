@@ -1,3 +1,7 @@
+###############################################
+######### Graph Classification Model ##########
+###############################################
+
 import torch.nn as nn
 import torch_geometric
 
@@ -13,7 +17,8 @@ class GraphClassificationModel(nn.Module):
                  sz_out=2048,
                  add_self_loops = True,
                  concat = False,
-                 dropout = 0.3
+                 dropout = 0.3,
+                 classification = False
                  ):
         super().__init__()
 
@@ -48,7 +53,7 @@ class GraphClassificationModel(nn.Module):
                 )
             
             layers.append(nn.ReLU())
-            self.sz_hid *= 2
+            self.sz_hid *= mult_factor
         layers.append(
             layer_type(
                 in_channels = self.sz_hid, 
@@ -67,9 +72,11 @@ class GraphClassificationModel(nn.Module):
         # Final classifier
         self.fc = nn.Linear(self.sz_hid, sz_out)
         self.f = nn.Linear(32, 3)
-        
+        self.classification = classification
+
         #Use only for supervised classification
-        #self.softmax = nn.LogSoftmax(dim = 1)
+        if self.classification == True:
+          self.softmax = nn.LogSoftmax(dim = 1)
     
     def forward(self, x, edge_index, edge_attr, batch):
         # 1: obtain node latents
@@ -85,6 +92,7 @@ class GraphClassificationModel(nn.Module):
 
         # 3: final classifier
         #Use only for supervised classification
-        #return self.softmax(self.f(h))
-
-        return h
+        if self.classification == True:
+          return self.softmax(h)
+        else:
+          return h
