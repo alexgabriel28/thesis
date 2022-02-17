@@ -4,7 +4,8 @@ import torch_geometric
 class GraphClassificationModel(nn.Module):
     def __init__(self, 
                  layer_type = torch_geometric.nn.GATv2Conv, 
-                 num_layers=6, 
+                 num_layers=6,
+                 mult_factor = 2, 
                  num_heads = 1,
                  edge_dim = 3,
                  sz_in=3, 
@@ -20,15 +21,48 @@ class GraphClassificationModel(nn.Module):
 
         # GNN layers with ReLU, as before
         layers = []
-        layers.append(layer_type(in_channels = sz_in, out_channels = sz_hid, heads = num_heads, edge_dim = edge_dim, dropout = dropout, concat= concat, add_self_loops = add_self_loops))
+        layers.append(
+            layer_type(
+                in_channels = sz_in, 
+                out_channels = sz_hid, 
+                heads = num_heads, 
+                edge_dim = edge_dim, 
+                dropout = dropout, 
+                concat= concat, 
+                add_self_loops = add_self_loops
+                )
+            )
         layers.append(nn.ReLU())
+
         for _ in range(num_layers-2):
-            layers.append(layer_type(in_channels = self.sz_hid, out_channels = self.sz_hid*2, heads = num_heads, edge_dim = edge_dim, dropout = dropout, concat= concat, add_self_loops = add_self_loops))
+            layers.append(
+                layer_type(
+                    in_channels = self.sz_hid, 
+                    out_channels = self.sz_hid*mult_factor, 
+                    heads = num_heads, 
+                    edge_dim = edge_dim, 
+                    dropout = dropout, 
+                    concat= concat, 
+                    add_self_loops = add_self_loops
+                    )
+                )
+            
             layers.append(nn.ReLU())
             self.sz_hid *= 2
-        layers.append(layer_type(in_channels = self.sz_hid, out_channels = 2*self.sz_hid, heads = num_heads, edge_dim = edge_dim, dropout = dropout, concat= concat, add_self_loops = add_self_loops))
+        layers.append(
+            layer_type(
+                in_channels = self.sz_hid, 
+                out_channels = self.sz_hid*mult_factor, 
+                heads = num_heads, 
+                edge_dim = edge_dim, 
+                dropout = dropout, 
+                concat= concat, 
+                add_self_loops = add_self_loops
+                )
+            )
+        
         self.layers = nn.ModuleList(layers)
-        self.sz_hid *= 2
+        self.sz_hid *= mult_factor
 
         # Final classifier
         self.fc = nn.Linear(self.sz_hid, sz_out)
@@ -47,7 +81,7 @@ class GraphClassificationModel(nn.Module):
 
         # 2: pool
         h = torch_geometric.nn.global_add_pool(x, batch)
-        h = self.fc(h)
+        h = self.fc(h.to(device))
 
         # 3: final classifier
         #Use only for supervised classification

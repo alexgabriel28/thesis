@@ -22,6 +22,14 @@ from tqdm.auto import tqdm
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def dir_length(dir):
+  """
+
+  Args:
+    dir: 
+
+  Returns:
+
+  """
   initial_count = 0
   for path in os.listdir(dir):
       if os.path.isfile(os.path.join(dir, path)):
@@ -29,6 +37,14 @@ def dir_length(dir):
   return initial_count
 
 def collate_batch(batch):
+  """
+
+  Args:
+    batch: 
+
+  Returns:
+
+  """
   timage_list, graph_list = [], []
 
   for _timage, _graph in batch:
@@ -43,47 +59,48 @@ def collate_batch(batch):
   return torch.stack(timage_list, 0, out=out).squeeze().to(device), Batch.from_data_list(graph_list).to(device)
 
 class InitDataset(Dataset):
+  """ """
   import torch
   """Create dataset from raw images with transformation and graph creation"""
   def __init__(self, root_dir, transform=None):
-      """
-      Args:
-          root_dir (string): Directory with all the images.
-          transform (callable, optional): Optional transform to be applied 
-          on a sample.
+    """
+    Args:
+        root_dir (string): Directory with all the images.
+        transform (callable, optional): Optional transform to be applied 
+        on a sample.
 
-      Requirements:
-          torch
-          torch.transforms.functional as TF
-          torch_geometric.utils.from_networkx
-          numpy as np
-          skimage.future.graph
-          skimage.segmentation.slic
-          skimage.util.img_as_float
-          skimage.measure
-          networkx
-          dir_length (helper submodule)
-      """
-      self.imgs_path = root_dir
-      file_list = glob.glob(self.imgs_path + "*")
-      print(file_list)
-      self.data = []
-      self.img_path = []
-      self.class_name = []
-      for class_path in file_list:
-          class_name = class_path.split("/")[-1]
-          for img_path in glob.glob(class_path + "/*.png"):
-              self.data.append([img_path, class_name])
-              self.img_path.append(img_path)
-              self.class_name.append(class_name)
-      print(self.data)
-      print(self.img_path)
-      print(self.class_name)
+    Requirements:
+        torch
+        torch.transforms.functional as TF
+        torch_geometric.utils.from_networkx
+        numpy as np
+        skimage.future.graph
+        skimage.segmentation.slic
+        skimage.util.img_as_float
+        skimage.measure
+        networkx
+        dir_length (helper submodule)
+    """
+    self.imgs_path = root_dir
+    file_list = glob.glob(self.imgs_path + "*")
+    print(file_list)
+    self.data = []
+    self.img_path = []
+    self.class_name = []
+    for class_path in file_list:
+        class_name = class_path.split("/")[-1]
+        for img_path in glob.glob(class_path + "/*.png"):
+            self.data.append([img_path, class_name])
+            self.img_path.append(img_path)
+            self.class_name.append(class_name)
+    print(self.data)
+    print(self.img_path)
+    print(self.class_name)
 
-      self.class_map = {"fold" : 0, "regular": 1, "gap": 2}
-      self.root_dir = root_dir
-      self.transform = transform
-      self.dir_list = os.listdir(self.root_dir)
+    self.class_map = {"fold" : 0, "regular": 1, "gap": 2}
+    self.root_dir = root_dir
+    self.transform = transform
+    self.dir_list = os.listdir(self.root_dir)
 
   def __len__(self):
       return len(self.data)
@@ -157,13 +174,26 @@ class InitDataset(Dataset):
       return sample["tensor_image"], sample["graph"]
 
 def create_datalists(
+    transform: object,
     root_dir: str = "/content/drive/MyDrive/MT Gabriel/data_1/",
     range_paths_lower: int = 0,
-    range_paths_upper: int = 1233,
-    transform: object = TRANSFORMS, 
+    range_paths_upper: int = 1233, 
     graph_dir: str = None,
-    image_dir: str = None
+    image_dir: str = None,
     )->[list, list]:
+  """
+
+  Args:
+    root_dir: str:  (Default value = "/content/drive/MyDrive/MT Gabriel/data_1/")
+    range_paths_lower: int:  (Default value = 0)
+    range_paths_upper: int:  (Default value = 1233)
+    transform: object:  (Default value = TRANSFORMS)
+    graph_dir: str:  (Default value = None)
+    image_dir: str:  (Default value = None)
+
+  Returns:
+
+  """
 
   imgs_path = root_dir
   file_list = glob.glob(imgs_path + "*")
@@ -201,7 +231,7 @@ def create_datalists(
     class_id = torch.tensor([class_id])
 
     #Apply transform
-    image = TRANSFORMS(image)
+    image = transforms(image)
 
     #Create segments using slic
     segments = slic(
@@ -272,6 +302,7 @@ def create_datalists(
   return graph_list, image_list
 
 class LightDataset(Dataset):
+  """ """
   import torch
   def __init__(self, graph_list, image_list):
     self.graph_list = graph_list

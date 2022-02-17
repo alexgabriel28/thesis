@@ -1,0 +1,8 @@
+numpy
+pandas
+torch==1.9.*
+torch_geometric
+torchvision
+skimage
+augly
+PIL
