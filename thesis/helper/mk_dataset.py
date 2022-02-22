@@ -4,103 +4,148 @@ import glob
 
 import torch
 from torch.utils.data import Dataset, DataLoader
-import torchvision.transforms as T
+import torchvision.transforms as transforms
+import torch_geometric.transforms as T
 import torchvision.transforms.functional as TF
 from torch_geometric.utils import from_networkx
-from torch_geometric.data import Batch
+from torch_geometric.data import Batch, Data
 import networkx as nx
 
 from skimage.segmentation import slic, mark_boundaries
-from skimage.util import img_as_float
+from skimage.util import img_as_float, img_as_int
 from skimage.future import graph
+from skimage.color import gray2rgb
 from skimage import measure
 from PIL import Image
+
+import augly.image as imaugs
 
 from tqdm.auto import tqdm
 
 #Define device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+#Count length of directory
 def dir_length(dir):
-  """
-
-  Args:
-    dir: 
-
-  Returns:
-
-  """
   initial_count = 0
   for path in os.listdir(dir):
       if os.path.isfile(os.path.join(dir, path)):
           initial_count += 1
   return initial_count
 
+################################################################################
+#######################        Augmentation    #################################
+################################################################################
+COLOR_JITTER_PARAMS = {
+    "brightness_factor": 1.2,
+    "contrast_factor": 0.4,
+    "saturation_factor": 0.2,
+    "p": 0.8
+}
+
+AUGMENTATIONS = [
+    imaugs.Resize(224, 224),            
+    #imaugs.Blur(),
+    #imaugs.ColorJitter(**COLOR_JITTER_PARAMS),
+    #imaugs.transforms.HFlip(p=0.5),
+    #imaugs.RandomNoise(mean = 0.0, var = 0.1, seed = 42, p = 0.2),
+    #imaugs.transforms.Contrast(factor = 1.7),
+    imaugs.Brightness(1.5),
+  ]
+
+TRANSFORMS = imaugs.Compose(AUGMENTATIONS)
+TENSOR_TRANSFORMS = transforms.Compose(
+    AUGMENTATIONS + [transforms.ToTensor(), 
+                     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
+                     )
+
+################################################################################
+#Collate function -> return graph and image data for simultaneous processing####
+################################################################################
+
 def collate_batch(batch):
-  """
-
-  Args:
-    batch: 
-
-  Returns:
-
-  """
   timage_list, graph_list = [], []
-
   for _timage, _graph in batch:
-    timage_list.append(_timage.to(device))
-    graph_list.append(_graph.to(device))
-  #timage_list = torch.tensor(timage_list, dtype=torch.float64)
-  #graph_list = torch_geometric.data.Data(graph_list, batch_first=True, padding_value=0)
+    graph = Data(
+        x = _graph.x, 
+        edge_attr = _graph.edge_attr, 
+        edge_index = _graph.edge_index
+        )
+    
+    timage_list.append(_timage)
+    graph_list.append(graph)
+
   elem = timage_list[0]
   numel = sum(x.numel() for x in timage_list)
   storage = elem.storage()._new_shared(numel)
-  out = elem.new(storage).resize_(len(batch), *list(elem.size())).to(device)
-  return torch.stack(timage_list, 0, out=out).squeeze().to(device), Batch.from_data_list(graph_list).to(device)
+  out = elem.new(storage).resize_(len(batch), *list(elem.size()))
+
+  return torch.stack(timage_list, 0, out=out).squeeze().to(
+      device, non_blocking = True
+      ), Batch.from_data_list(graph_list).to(device, non_blocking = True)
+
+################################################################################
+#Collate function -> return graph data for GNN testing #########################
+################################################################################
+def collate_graph_batch(batch):
+  graph_list = []
+  for _timage, _graph in batch:
+    graph = Data(
+        x = _graph.x, 
+        edge_attr = _graph.edge_attr, 
+        edge_index = _graph.edge_index,
+        y = _graph.y
+        )
+    graph_list.append(graph)
+  return Batch.from_data_list(graph_list).to(device, non_blocking = True)
+
+################################################################################
+#Create dataset with internal processing of images and graph creation###########
+#Note: very slow __getitem__ -> use create_datalist funct & LigthDataset class##
+################################################################################
 
 class InitDataset(Dataset):
-  """ """
   import torch
   """Create dataset from raw images with transformation and graph creation"""
   def __init__(self, root_dir, transform=None):
-    """
-    Args:
-        root_dir (string): Directory with all the images.
-        transform (callable, optional): Optional transform to be applied 
-        on a sample.
+      """
+      Args:
+          root_dir (string): Directory with all the images.
+          transform (callable, optional): Optional transform to be applied 
+          on a sample.
 
-    Requirements:
-        torch
-        torch.transforms.functional as TF
-        torch_geometric.utils.from_networkx
-        numpy as np
-        skimage.future.graph
-        skimage.segmentation.slic
-        skimage.util.img_as_float
-        skimage.measure
-        networkx
-        dir_length (helper submodule)
-    """
-    self.imgs_path = root_dir
-    file_list = glob.glob(self.imgs_path + "*")
-    print(file_list)
-    self.data = []
-    self.img_path = []
-    self.class_name = []
-    for class_path in file_list:
-        class_name = class_path.split("/")[-1]
-        for img_path in glob.glob(class_path + "/*.png"):
-            self.data.append([img_path, class_name])
-            self.img_path.append(img_path)
-            self.class_name.append(class_name)
-    print(self.data)
-    print(self.img_path)
-    print(self.class_name)
+      Requirements:
+          torch
+          torch.transforms.functional as TF
+          torch_geometric.utils.from_networkx
+          numpy as np
+          skimage.future.graph
+          skimage.segmentation.slic
+          skimage.util.img_as_float
+          skimage.measure
+          networkx
+          dir_length (helper submodule)
+      """
+      self.imgs_path = root_dir
+      file_list = glob.glob(self.imgs_path + "*")
+      print(file_list)
+      self.data = []
+      self.img_path = []
+      self.class_name = []
+      for class_path in file_list:
+          class_name = class_path.split("/")[-1]
+          for img_path in glob.glob(class_path + "/*.png"):
+              self.data.append([img_path, class_name])
+              self.img_path.append(img_path)
+              self.class_name.append(class_name)
+      print(self.data)
+      print(self.img_path)
+      print(self.class_name)
 
-    self.class_map = {"fold" : 0, "regular": 1, "gap": 2}
-    self.root_dir = root_dir
-    self.transform = transform
-    self.dir_list = os.listdir(self.root_dir)
+      self.class_map = {"fold" : 0, "regular": 1, "gap": 2}
+      self.root_dir = root_dir
+      self.transform = transform
+      self.dir_list = os.listdir(self.root_dir)
 
   def __len__(self):
       return len(self.data)
@@ -173,27 +218,16 @@ class InitDataset(Dataset):
           }
       return sample["tensor_image"], sample["graph"]
 
+################################################################################
+#Create timage_list/ graph_list from img dir for processing w/ LightDataset#####
+################################################################################
 def create_datalists(
-    transform: object,
-    root_dir: str = "/content/drive/MyDrive/MT Gabriel/data_1/",
-    range_paths_lower: int = 0,
-    range_paths_upper: int = 1233, 
+    root_dir: str = "/content/drive/MyDrive/MT Gabriel/data_1/", 
     graph_dir: str = None,
     image_dir: str = None,
+    transforms = TRANSFORMS,
+    n_segments = 500,
     )->[list, list]:
-  """
-
-  Args:
-    root_dir: str:  (Default value = "/content/drive/MyDrive/MT Gabriel/data_1/")
-    range_paths_lower: int:  (Default value = 0)
-    range_paths_upper: int:  (Default value = 1233)
-    transform: object:  (Default value = TRANSFORMS)
-    graph_dir: str:  (Default value = None)
-    image_dir: str:  (Default value = None)
-
-  Returns:
-
-  """
 
   imgs_path = root_dir
   file_list = glob.glob(imgs_path + "*")
@@ -217,8 +251,7 @@ def create_datalists(
           class_names.append(class_name)
 
   #Loop over data instance
-  for idx in tqdm(range(range_paths_lower, range_paths_upper)):
-    img_path = img_paths[idx]
+  for idx, img_path in tqdm(enumerate(img_paths)):
     class_name = class_names[idx]
     if torch.is_tensor(idx):
       idx = idx.tolist()
@@ -236,7 +269,7 @@ def create_datalists(
     #Create segments using slic
     segments = slic(
         img_as_float(image),
-        n_segments=500, 
+        n_segments=n_segments, 
         compactness=30, 
         sigma=0.3, 
         start_label=1
@@ -301,8 +334,10 @@ def create_datalists(
 
   return graph_list, image_list
 
+################################################################################
+#LightDataset -> takes graph_list and image_list ###############################
+################################################################################
 class LightDataset(Dataset):
-  """ """
   import torch
   def __init__(self, graph_list, image_list):
     self.graph_list = graph_list
