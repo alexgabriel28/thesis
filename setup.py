@@ -4,8 +4,8 @@ setup(
     author = "Alexander Gabriel",
     description = "Package MT @ ITA RWTH - Continual Learning x Composite Prod",
     name = "thesis",
-    version = "0.1.1",
-    packages = find_packages(include =["master-thesis", "master-thesis.*"]),
+    version = "0.1.2",
+    packages = find_packages(include =["thesis", "thesis.*"]),
     install_require = [
       "numpy", 
       "pandas", 

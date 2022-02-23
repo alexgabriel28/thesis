@@ -351,10 +351,11 @@ class LightDataset(Dataset):
           idx = idx.tolist()
     return self.image_list[idx], self.graph_list[idx]
 
+from torch_geometric.utils import degree
 
-if __name__ == "__main__":
-  import multiprocessing as mp
-  #Multiprocessing of data augmentation / graph creation
-  #pool = mp.Pool(mp.cpu_count())
-  #result_1, result_2 = pool.map(create_datalists, ["/content/drive/MyDrive/MT Gabriel/data_1/", 0, 1323])
-  #result_3, result_4 = pool.map(create_datalists, ["/content/drive/MyDrive/MT Gabriel/data_1/", 1323, 2648])
+#Train-test-split: 80:20
+def train_test_split(dataset, test_ratio = 0.2):
+    train_size = int((1-test_ratio) * len(dataset))
+    test_size = len(dataset) - train_size
+    train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
+    return train_dataset, test_dataset
