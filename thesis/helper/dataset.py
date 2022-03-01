@@ -100,6 +100,49 @@ def collate_graph_batch(batch):
   return Batch.from_data_list(graph_list).to(device, non_blocking = True)
 
 ################################################################################
+#Collate function -> return image data for ResNet backbone testing #############
+################################################################################
+def collate_model_batch(batch):
+  image_list, label_list = [], []
+  for image, graph in batch:
+    label_list.append(graph.y)
+    image_list.append(image)
+  
+  elem = image_list[0]
+  numel = sum(x.numel() for x in image_list)
+  storage = elem.storage()._new_shared(numel)
+  out = elem.new(storage).resize_(len(batch), *list(elem.size()))
+
+  return torch.stack(image_list, 0, out=out).squeeze().to(
+      device, non_blocking = True
+      ), torch.tensor(label_list).to(device)
+
+################################################################################
+#Collate function -> for self-supervised learning; transforms image (Tensor)####
+################################################################################
+def collate_ss_batch(batch):
+  timage_list, graph_list = [], []
+  for _timage, _graph in batch:
+    graph = Data(
+        x = _graph.x, 
+        edge_attr = _graph.edge_attr, 
+        edge_index = _graph.edge_index
+        )
+    t = tensor_img_transforms.Transform()
+    y1, y2 = t(_timage)
+    timage_list.extend([y1, y2])
+    graph_list.extend([graph, graph])
+
+  elem = timage_list[0]
+  numel = sum(x.numel() for x in timage_list)
+  storage = elem.storage()._new_shared(numel)
+  out = elem.new(storage).resize_(len(batch), *list(elem.size()))
+
+  return torch.stack(timage_list, 0, out=out).squeeze().to(
+      device, non_blocking = True
+      ), Batch.from_data_list(graph_list).to(device, non_blocking = True)
+      
+################################################################################
 #Create dataset with internal processing of images and graph creation###########
 #Note: very slow __getitem__ -> use create_datalist funct & LigthDataset class##
 ################################################################################

@@ -1,6 +1,7 @@
 #############################################################
 ################# Training Step for GNN #####################
 #############################################################
+import torch
 import torch.optim as optim
 from tqdm.auto import tqdm
 
@@ -13,6 +14,7 @@ def train_gat(model, train_loader, test_loader, num_epochs, edge_attr = True):
     # Set up the loss and the optimizer
     loss_fn = nn.NLLLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
+    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma = 0.9)
     train_acc_ls = []
     test_acc_ls = []
     loss_ls = []
@@ -201,3 +203,82 @@ def train_vicreg(model, train_loader, test_loader, epochs, root_dir = None) -> t
               }, PATH)
     
     return loss_list
+
+#################################################################
+################# Training Step for ResNet Backbone  ############
+#################################################################
+
+def model_train(model, train_loader, epochs):
+  model.train()
+  model.to(device)
+  loss_list =  []
+
+  loss_fn = nn.NLLLoss()
+  optimizer = torch.optim.Adam(model.parameters(), lr = 0.001)
+
+  for epoch in tqdm(range(epochs)):
+    batch_count = 0
+    epoch_loss = 0
+    batch_acc_list = []
+    batch_loss_list = []
+
+    for data, label in tqdm(train_loader, leave = False):
+      data.to(device)
+      optimizer.zero_grad()
+
+      n_corr = 0
+      n_total = 0
+
+      out = model(data.float()).squeeze()
+      loss = loss_fn(out, label.long())
+      loss.backward()
+      optimizer.step()
+
+      n_corr += (torch.argmax(out, dim = 1) == label.long()).sum().float().item()
+      n_total += label.size()[0]
+
+      acc = n_corr/n_total
+      batch_acc_list.append(acc)
+      batch_loss_list.append(loss)
+      batch_count += 1
+      #print(f"Batch Accuracy: {acc:.2f} | Batch loss: {loss:.2f}")
+    epoch_loss = (sum(batch_loss_list)/batch_count)
+    epoch_acc = (sum(batch_acc_list)/batch_count)
+    print(f"Epoch: {epoch} | Loss: {epoch_loss} | Accuracy: {epoch_acc}")
+    loss_list.append(epoch_loss)
+  return loss_list
+
+#################################################################
+################# Training Step for Graph Backbone  ############
+#################################################################
+
+def train_step_graph(model, dataloader, epochs, optimizer = torch.optim.Adam(model.parameters(), lr = 0.001)):
+  model.train()
+  model.to(device)
+
+  n_correct = 0
+  n_total = 0
+  loss_list = []
+  acc_list = []
+  loss_fn = nn.NLLLoss()
+  corr_pred = []
+  optimizer = optimizer
+
+  for epoch in tqdm(range(epochs)):
+    for graph in tqdm(dataloader, leave = False):
+      graph.to(device)
+      optimizer.zero_grad()
+      out = model(graph.x.float(), graph.edge_index, graph.edge_attr.float(), graph.batch).float().squeeze()
+      loss = loss_fn(out, graph.y.long()).float()
+      loss.backward()
+      optimizer.step()
+
+      n_correct += (torch.argmax(out, dim = 1) == graph.y).sum().item()
+      n_total += graph.y.shape[0]
+      acc = n_correct/n_total
+      print(f"Batch accuracy: {acc}")
+
+    print(f"Epoch: {epoch} | Epoch loss: {loss} | Accuracy: {acc}")
+    acc_list.append(acc)
+    loss_list.append(loss)
+  return loss_list, acc_list

@@ -6,14 +6,19 @@ setup(
     name = "thesis",
     version = "0.1.2",
     packages = find_packages(include =["thesis", "thesis.*"]),
-    install_require = [
+    dependency_links = [
+      "https://data.pyg.org/whl/torch-1.9.0+cu102.html"
+    ],
+    install_requires = [
       "numpy", 
       "pandas", 
-      "torch==1.9.*", 
+      "torch==1.9.0", 
       "torch_geometric",
-      "torchvision",
       "pyment",
       "augly",
-      "PIL"
-      ]
+      "Pillow >=8.2.*",
+      "umap-learn"
+      ],
 )
+
+# Manually install !apt-get install libmagic-dev
