@@ -22,6 +22,8 @@ import augly.image as imaugs
 
 from tqdm.auto import tqdm
 
+from thesis.helper import tensor_img_transforms
+
 #Define device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -102,11 +104,20 @@ def collate_graph_batch(batch):
 ################################################################################
 #Collate function -> return image data for ResNet backbone testing #############
 ################################################################################
+
 def collate_model_batch(batch):
   image_list, label_list = [], []
+  
+  transform = transforms.Compose([
+    transforms.ToPILImage(),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
+  ])
+
   for image, graph in batch:
     label_list.append(graph.y)
-    image_list.append(image)
+    image_list.append(transform(image))
   
   elem = image_list[0]
   numel = sum(x.numel() for x in image_list)

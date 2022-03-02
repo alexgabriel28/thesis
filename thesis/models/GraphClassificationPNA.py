@@ -1,10 +1,11 @@
 ###################################################
 ######### Graph Classification Model PNA ##########
 ###################################################
-
+import torch
 import torch.nn as nn
 import torch_geometric
 from torch_geometric.utils import degree
+
 class GraphClassificationModel(nn.Module):
     def __init__(self, 
                  layer_type = torch_geometric.nn.PNAConv, 

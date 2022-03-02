@@ -5,13 +5,15 @@ from torchsummary import summary
 import torch_geometric
 from tqdm.auto import tqdm
 from thesis.models import GraphClassificationModel as gcm
+from thesis.loss import vicreg_loss_fn as vlf
 
 import torch
 import torch.nn as nn
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print("Using device:", device)
 
-class VICReg(nn.Module):
+class VICRegGraph(nn.Module):
     def __init__(
         self,
         features_dim: int = 512,

@@ -282,3 +282,101 @@ def train_step_graph(model, dataloader, epochs, optimizer = torch.optim.Adam(mod
     acc_list.append(acc)
     loss_list.append(loss)
   return loss_list, acc_list
+
+################################################################################
+################# Training Step for VICReg ResNet x Graph x Semi ###############
+################################################################################
+
+def train_vicreg_graph_semi(
+  model, 
+  train_loader, 
+  test_loader, 
+  epochs, 
+  weight_vicreg = 1, 
+  weight_sim = 1,
+  alpha = 0.5,
+  t = 0.3,
+  root_dir = None) -> torch.Tensor:
+
+  """Training step for Self-Supervised Training model with VICReg and Sim loss
+  Args:
+      batch (Sequence[Any]): a batch of data in the format of [img_indexes, [X], Y], where
+          [X] is a list of size num_crops containing batches of images.
+      batch_idx (int): index of the batch.
+  Returns:
+      torch.Tensor: total loss composed of VICReg loss and classification loss.
+  Gratefully adapted from: https://github.com/vturrisi/solo-learn
+  """
+  model.train()
+  model.to(device)
+  loss_list = []
+  optimizer = torch.optim.Adam(model.parameters(), lr = 0.01)
+  scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma = 0.9)
+  #fig, ax = plt.subplots()
+  #ax.set_title("Epoch loss")
+  #try:
+  for epoch in tqdm(range(epochs)):
+      batch_count = 0
+      batch_loss = 0
+      epoch_loss = 0
+      counter = 0
+
+      PATH = os.path.join(root_dir, f"{epoch}.pt")
+
+      for image_data, graph_data in tqdm(train_loader, leave = False):
+          # Zero grads -> forward pass -> compute loss -> backprop
+          optimizer.zero_grad()
+          
+          out = model(image_data.float(), graph_data).float().squeeze()
+          feature_size = out.size()[1]
+
+          labels = graph_data.y.view(graph_data.y.size(dim = 0), 1).repeat(2, 1)
+          loss = weight_vicreg*vlf.vicreg_loss_func(
+              out[:,:int(feature_size*0.5)],
+              out[:, int(feature_size*0.5):],
+              ).float() + weight_sim* similarity_loss(
+                  torch.cat(
+                      (
+                          out[:,:int(feature_size*0.5)], out[:, int(feature_size*0.5):]
+                        ), dim = 0), 
+                        labels,
+                        alpha,
+                        t,
+              ).float()
+
+                  
+          loss.backward()
+          optimizer.step()
+
+          batch_count += 1
+          batch_loss += loss
+          print(f"Epoch: {epoch} | Loss: {loss.detach().cpu().numpy()}")
+      
+      clear_output()
+      epoch_loss = batch_loss/batch_count
+      loss_list.append(epoch_loss.detach().cpu().numpy())
+      print(f"Epoch: {epoch} |Epoch loss: {(epoch_loss):.2f}")
+      #ax.plot(loss_list)
+      #plt.show()
+
+      batch_count = 0
+      batch_loss = 0
+
+      if epoch_loss.detach().cpu().numpy() >= min(loss_list):
+        counter += 1
+      else:
+        counter = 0
+
+      if counter > 5:
+        return loss_list
+        break
+
+      if epoch % 500 == 0:
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'loss': loss,
+            }, PATH)
+  
+  return loss_list

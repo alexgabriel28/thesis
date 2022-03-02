@@ -1,3 +1,20 @@
+from typing import Any
+import torch
+import umap
+import plotly.express as px
+import pandas as pd
+
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import seaborn as sns
+
+from skimage.future import graph
+
+from torch.utils.data import DataLoader, Dataset
+from thesis.helper import utils
+from sklearn.preprocessing import StandardScaler
+
 def visualize_segments(dataset, idx = 0):
   """
   Plots the boundaries of segments from a torch Dataset object.
@@ -59,12 +76,52 @@ def visualize_rag_graph(dataset, idx = 0):
   plt.tight_layout()
   plt.show()
 
-def visualize_embedding(h, color, epoch=None, loss=None):
-    plt.figure(figsize=(7,7))
-    plt.xticks([])
-    plt.yticks([])
-    h = h.detach().cpu().numpy()
-    plt.scatter(h[:, 0], h[:, 1], s=140, c=color, cmap="Set2")
-    if epoch is not None and loss is not None:
-        plt.xlabel(f'Epoch: {epoch}, Loss: {loss.item():.4f}', fontsize=16)
-    plt.show()
+
+def visualize_embeddings(
+    model: torch.nn.Module,
+    dataloader: torch.utils.data.DataLoader,
+    n_neighbors: int = 30, 
+    min_dist: int = 0,
+    n_components: int = 2) -> [Any]:
+
+    """
+    Args: pretrained model; n_neighbors, min_dist, n_components for UMAP algo
+
+    Returns: plot of embeddings in 3d-space
+    """
+    utils.set_parameter_requires_grad(model, False)
+
+    #Calculate embeddings:
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model.eval()
+    model.to(device)
+    outs = torch.Tensor().to(device)
+    labels = torch.Tensor().to(device)
+    for data, label in dataloader:
+        torch.no_grad()
+        outs = torch.cat((outs, dataloader(data.float()).squeeze()), 0)
+        labels = torch.cat((labels, label), 0)
+
+    #Scale inputs to ease UMAP operation (m = 0, std = 1)
+    scaler = StandardScaler()
+    out_np = outs.detach().cpu().numpy()
+    outs_scaled = scaler.fit_transform(out_np)
+
+    #Generate px.scatter_3d plot
+    %matplotlib inline
+    sns.set(style='white', context='poster', rc={'figure.figsize':(14,10)})
+
+    clusterable_embedding = umap.UMAP(
+        n_neighbors=n_neighbors,
+        min_dist = min_dist,
+        n_components=n_components,
+        random_state=3407,
+    ).fit_transform(out_np)
+
+    df = pd.DataFrame()
+    df["x"] = clusterable_embedding[:,0]
+    df["y"] = clusterable_embedding[:,1]
+    df["z"] = clusterable_embedding[:,2]
+
+    fig = px.scatter_3d(df, x = "x", y = "y", z = "z", color = labels.cpu().numpy())
+    fig.show()
