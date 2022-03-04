@@ -1,5 +1,6 @@
 ##Init-file for model
 import torch
+import os
 from torch import nn
 
 from typing import Any, Dict, List, Sequence

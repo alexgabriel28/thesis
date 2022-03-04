@@ -64,7 +64,6 @@ TENSOR_TRANSFORMS = transforms.Compose(
 ################################################################################
 #Collate function -> return graph and image data for simultaneous processing####
 ################################################################################
-
 def collate_batch(batch):
   timage_list, graph_list = [], []
   for _timage, _graph in batch:
@@ -104,17 +103,15 @@ def collate_graph_batch(batch):
 ################################################################################
 #Collate function -> return image data for ResNet backbone testing #############
 ################################################################################
-
 def collate_model_batch(batch):
   image_list, label_list = [], []
-  
+  # Transform in eval model: Only normalization (resizing happened before)
   transform = transforms.Compose([
     transforms.ToPILImage(),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                  std=[0.229, 0.224, 0.225])
   ])
-
   for image, graph in batch:
     label_list.append(graph.y)
     image_list.append(transform(image))
@@ -137,7 +134,8 @@ def collate_ss_batch(batch):
     graph = Data(
         x = _graph.x, 
         edge_attr = _graph.edge_attr, 
-        edge_index = _graph.edge_index
+        edge_index = _graph.edge_index,
+        y = _graph.y
         )
     t = tensor_img_transforms.Transform()
     y1, y2 = t(_timage)
@@ -152,6 +150,43 @@ def collate_ss_batch(batch):
   return torch.stack(timage_list, 0, out=out).squeeze().to(
       device, non_blocking = True
       ), Batch.from_data_list(graph_list).to(device, non_blocking = True)
+
+################################################################################
+#Collate function -> for self-supervised learning; transforms images (Tensor)###
+################################################################################
+def collate_CNN_2(batch):
+  device = "cuda" if torch.cuda.is_available() else "cpu"
+
+  timage_list_1, timage_list_2, label_list = [], [], []
+  for timage, labels in batch:
+    t = tensor_img_transforms.Transform()
+    y1, y2 = t(timage)
+    timage_list_1.append(y1)
+    timage_list_2.append(y2)
+    label_list.append(labels)
+
+  elem_1 = timage_list_1[0]
+  numel_1 = sum(x.numel() for x in timage_list_1)
+  storage_1 = elem_1.storage()._new_shared(numel_1)
+  out_1 = elem_1.new(storage_1).resize_(len(batch), *list(elem_1.size()))
+
+  elem_2 = timage_list_2[0]
+  numel_2 = sum(x.numel() for x in timage_list_2)
+  storage_2 = elem_2.storage()._new_shared(numel_2)
+  out_2 = elem_2.new(storage_2).resize_(len(batch), *list(elem_2.size()))
+
+  elem_3 = label_list[0]
+  numel_3 = sum(x.numel() for x in label_list)
+  storage_3 = elem_3.storage()._new_shared(numel_3)
+  out_3 = elem_3.new(storage_3).resize_(len(batch), *list(elem_3.size()))
+
+  return torch.stack(timage_list_1, 0, out=out_1).squeeze().to(
+      device, non_blocking = True
+      ), torch.stack(timage_list_2, 0, out=out_2).squeeze().to(
+      device, non_blocking = True
+      ), torch.stack(label_list, 0, out=out_3).squeeze().to(
+      device, non_blocking = True
+      )
       
 ################################################################################
 #Create dataset with internal processing of images and graph creation###########
@@ -289,8 +324,6 @@ def create_datalists(
   data = []
   img_paths = []
   class_names = []
-
-  
   graph_list = []
   image_list = []
 
@@ -405,11 +438,45 @@ class LightDataset(Dataset):
           idx = idx.tolist()
     return self.image_list[idx], self.graph_list[idx]
 
+################################################################################
+#ImageDataset -> takes graph_list and image_list ###############################
+################################################################################
+class ImageDataset(Dataset):
+  def __init__(self, root_dir):
+    self.root_dir = root_dir
+    self.label_list = []
+    self.image_list = []
+
+    for class_path in glob.glob(root_dir + "*"):
+      cls = class_path.split("/")[-1]
+      for img_path in glob.glob(class_path + "/*.png"):
+        img = Image.open(str(img_path)).convert("RGB")
+        tensor_image = TF.pil_to_tensor(img)
+        
+        self.image_list.append(tensor_image)
+        self.label_list.append(cls)
+
+    self.class_map = {"fold" : 0, "regular": 1, "gap": 2}
+
+  def __len__(self):
+    return len(self.image_list)
+
+  def __getitem__(self, idx):
+    class_name = self.label_list[idx]
+    if torch.is_tensor(idx):
+          idx = idx.tolist()
+
+    self.class_id = self.class_map[class_name]
+    self.class_id = torch.tensor([self.class_id])
+    return self.image_list[idx], self.class_id
+
 from torch_geometric.utils import degree
 
 #Train-test-split: 80:20
 def train_test_split(dataset, test_ratio = 0.2):
     train_size = int((1-test_ratio) * len(dataset))
     test_size = len(dataset) - train_size
-    train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
+    train_dataset, test_dataset = torch.utils.data.random_split(
+      dataset, [train_size, test_size]
+      )
     return train_dataset, test_dataset

@@ -25,7 +25,6 @@ from tqdm.auto import tqdm
 
 from typing import Any
 import torch
-import umap
 import plotly.express as px
 import pandas as pd
 

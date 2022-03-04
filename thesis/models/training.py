@@ -1,9 +1,18 @@
+import os
+import torch
+from torch import nn as nn
+import torch.optim as optim
+from tqdm.auto import tqdm
+
+from IPython.display import clear_output
+
+from thesis.loss import vicreg_loss_fn as vlf
+from thesis.loss.similarity_loss import cosine_sim
+from thesis.loss.similarity_loss import NCELoss
+
 #############################################################
 ################# Training Step for GNN #####################
 #############################################################
-import torch
-import torch.optim as optim
-from tqdm.auto import tqdm
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print("Using device:", device)
@@ -181,7 +190,7 @@ def train_vicreg(model, train_loader, test_loader, epochs, root_dir = None) -> t
             feature_size = out.size()[1]
             #print(out[:,:int(feature_size*0.5)], out[:, int(feature_size*0.5):])
 
-            vicreg_loss = vicreg_loss_fn(
+            vicreg_loss = vlf.vicreg_loss_fn(
                 out[:,:int(feature_size*0.5)],
                  out[:, int(feature_size*0.5):]
                  ).float()
@@ -252,7 +261,7 @@ def model_train(model, train_loader, epochs):
 ################# Training Step for Graph Backbone  ############
 #################################################################
 
-def train_step_graph(model, dataloader, epochs, optimizer = torch.optim.Adam(model.parameters(), lr = 0.001)):
+def train_step_graph(model, dataloader, epochs, optimizer = None):
   model.train()
   model.to(device)
 
@@ -262,7 +271,11 @@ def train_step_graph(model, dataloader, epochs, optimizer = torch.optim.Adam(mod
   acc_list = []
   loss_fn = nn.NLLLoss()
   corr_pred = []
-  optimizer = optimizer
+
+  if optimizer == None:
+    optimizer = torch.optim.Adam(model.parameters(), lr = 0.001)
+  else:
+    optimizer = optimizer
 
   for epoch in tqdm(range(epochs)):
     for graph in tqdm(dataloader, leave = False):
@@ -291,10 +304,10 @@ def train_vicreg_graph_semi(
   model, 
   train_loader, 
   test_loader, 
-  epochs, 
+  epochs,
   weight_vicreg = 1, 
   weight_sim = 1,
-  alpha = 0.5,
+  lr = 0.001,
   t = 0.3,
   root_dir = None) -> torch.Tensor:
 
@@ -307,14 +320,13 @@ def train_vicreg_graph_semi(
       torch.Tensor: total loss composed of VICReg loss and classification loss.
   Gratefully adapted from: https://github.com/vturrisi/solo-learn
   """
+  device = "cuda" if torch.cuda.is_available() else "cpu"
   model.train()
   model.to(device)
   loss_list = []
-  optimizer = torch.optim.Adam(model.parameters(), lr = 0.01)
+  optimizer = torch.optim.Adam(model.parameters(), lr = lr)
   scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma = 0.9)
-  #fig, ax = plt.subplots()
-  #ax.set_title("Epoch loss")
-  #try:
+
   for epoch in tqdm(range(epochs)):
       batch_count = 0
       batch_loss = 0
@@ -334,13 +346,12 @@ def train_vicreg_graph_semi(
           loss = weight_vicreg*vlf.vicreg_loss_func(
               out[:,:int(feature_size*0.5)],
               out[:, int(feature_size*0.5):],
-              ).float() + weight_sim* similarity_loss(
+              ).float() + weight_sim* NCELoss(
                   torch.cat(
                       (
                           out[:,:int(feature_size*0.5)], out[:, int(feature_size*0.5):]
                         ), dim = 0), 
                         labels,
-                        alpha,
                         t,
               ).float()
 
@@ -380,3 +391,106 @@ def train_vicreg_graph_semi(
             }, PATH)
   
   return loss_list
+
+
+################################################################################
+################# Training Step for VICReg ResNet x ResNet x Semi ##############
+################################################################################
+def train_vicreg_cnn_2(
+  model, 
+  dataloader, 
+  epochs,
+  weight_vicreg = 1, 
+  weight_sim = 1,
+  lr = 0.001,
+  t = 0.3,
+  alpha = 0.5,
+  sim_loss_fn = "cosine",
+  lr_scheduler = "exp",
+  gamma = 0.9,
+  root_dir = None, **kwargs) -> torch.Tensor:
+
+  """Training step for Self-Supervised Training model with VICReg and Sim loss
+  Args:
+      batch (Sequence[Any]): a batch of data in the format of [img_indexes, [X], Y], where
+          [X] is a list of size num_crops containing batches of images.
+      batch_idx (int): index of the batch.
+  Returns:
+      torch.Tensor: total loss composed of VICReg loss and classification loss.
+  Gratefully adapted from: https://github.com/vturrisi/solo-learn
+  """
+  try:
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model.train()
+    model.to(device)
+
+    loss_list, vicreg_loss_list, sim_loss_list = [], [], []
+
+    optimizer = torch.optim.Adam(model.parameters(), lr = lr)
+    if lr_scheduler == "exp":
+      scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma = gamma)
+
+    for epoch in tqdm(range(epochs)):
+        batch_count = batch_loss = vicreg_batch_loss = sim_batch_loss = epoch_loss = 0
+        for image_1, image_2, labels in tqdm(dataloader, leave = False):
+            
+            # Zero grads -> forward pass -> compute loss -> backprop
+            optimizer.zero_grad()
+            out = model(image_1.float(), image_2.float()).float().squeeze()
+            feature_size = out.size()[1]
+
+            labels = labels.view(labels.size(dim = 0), 1).repeat(2, 1)
+            
+            vicreg_loss = weight_vicreg*vlf.vicreg_loss_func(
+                out[:,:int(feature_size*0.5)],
+                out[:, int(feature_size*0.5):],
+                ).float()
+            
+            if sim_loss_fn == "cosine":
+                sim_loss = weight_sim*cosine_sim(torch.cat(
+                            (
+                                out[:,:int(feature_size*0.5)],
+                                out[:, int(feature_size*0.5):]
+                              ), dim = 0), labels, t, alpha).float()
+            
+            elif sim_loss_fn == "NCELoss":
+                sim_loss = weight_sim*similarity_loss(torch.cat(
+                            (
+                                out[:,:int(feature_size*0.5)],
+                                out[:, int(feature_size*0.5):]
+                              ), dim = 0), labels, t).float()
+            
+            loss = vicreg_loss + sim_loss
+
+            loss.backward()
+            optimizer.step()
+
+            batch_count += 1
+            batch_loss += loss.detach().cpu().numpy()
+            vicreg_batch_loss += vicreg_loss.detach().cpu().numpy()
+            sim_batch_loss += sim_loss.detach().cpu().numpy()
+            print(f"Epoch: {epoch} | Batch_Loss: {loss.detach().cpu().numpy()}")
+        
+        clear_output()
+
+        epoch_loss = batch_loss/batch_count
+        loss_list.append(epoch_loss)
+        vicreg_loss_list.append(vicreg_batch_loss)
+        sim_loss_list.append(sim_batch_loss)
+
+        print(f"Epoch: {epoch} |Epoch loss: {(epoch_loss):.2f}")
+
+        if (root_dir != None) & (epoch % 500 == 0):
+          PATH = os.path.join(root_dir, f"{epoch}.pt")
+          torch.save({
+              'epoch': epoch,
+              'model_state_dict': model.state_dict(),
+              'optimizer_state_dict': optimizer.state_dict(),
+              'loss': loss,
+              }, PATH)
+    
+    return loss_list, vicreg_loss_list, sim_loss_list
+  
+  except KeyboardInterrupt:
+    print("Execution interrupted by user")
+    return loss_list, vicreg_loss_list, sim_loss_list

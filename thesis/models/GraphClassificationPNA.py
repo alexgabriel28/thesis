@@ -2,45 +2,63 @@
 ######### Graph Classification Model PNA ##########
 ###################################################
 import torch
+from torch._C import NoneType
 import torch.nn as nn
 import torch_geometric
 from torch_geometric.utils import degree
+from torch.utils.data import Dataset, DataLoader
 
 class GraphClassificationModel(nn.Module):
     def __init__(self, 
                  layer_type = torch_geometric.nn.PNAConv, 
-                 num_layers=6,
+                 num_layers = 6,
                  mult_factor = 2, 
-                 sz_in=3, 
-                 sz_hid=64, 
-                 sz_out=2048,
+                 sz_in = 3, 
+                 sz_hid = 64, 
+                 sz_out = 2048,
                  add_self_loops = True,
                  dropout = 0.3,
                  pre_layers = 1,
-                 towers =1,
+                 towers = 1,
                  divide_input = False,
-                 classification = False
+                 classification = False,
+                 train_dataset: torch.utils.data.Dataset = None,
                  ):
         super().__init__()
         torch.manual_seed(3407)
         self.sz_hid = sz_hid
+        
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = device
 
         aggregators = ['mean', 'min', 'max', 'std']
         scalers = ['identity', 'amplification', 'attenuation']
 
-        layers = []
-        layers.append(
-            layer_type(
-                in_channels = sz_in, 
-                out_channels = sz_hid,
-                aggregators = aggregators,
-                scalers = scalers,
-                deg = deg,
-                pre_layers = pre_layers,
-                divide_input = divide_input,
-                towers = towers,
+        # Calculate degree for PNA
+        max_degree = -1
+        for data, graph in train_dataset:
+            d = degree(graph.edge_index[1], num_nodes=graph.num_nodes, dtype=torch.long)
+            max_degree = max(max_degree, int(d.max()))
+
+        # Compute the in-degree histogram tensor
+        deg = torch.zeros(max_degree + 1, dtype=torch.long)
+        for data, graph in train_dataset:
+            d = degree(graph.edge_index[1], num_nodes=graph.num_nodes, dtype=torch.long)
+            deg += torch.bincount(d, minlength=deg.numel())
+
+            layers = []
+            layers.append(
+                layer_type(
+                    in_channels = sz_in, 
+                    out_channels = sz_hid,
+                    aggregators = aggregators,
+                    scalers = scalers,
+                    deg = deg,
+                    pre_layers = pre_layers,
+                    divide_input = divide_input,
+                    towers = towers,
+                    )
                 )
-            )
         layers.append(nn.ReLU())
 
         for _ in range(num_layers-2):
@@ -94,7 +112,7 @@ class GraphClassificationModel(nn.Module):
 
         # 2: pool
         h = torch_geometric.nn.global_add_pool(x, batch)
-        h = self.fc(h.to(device))
+        h = self.fc(h.to(self.device))
         h = self.dropout(h)
         h = self.f(h)
 
