@@ -81,7 +81,10 @@ def visualize_embeddings(
     dataloader: torch.utils.data.DataLoader,
     n_neighbors: int = 30, 
     min_dist: int = 0,
-    n_components: int = 3) -> [Any]:
+    n_components: int = 3,
+    prototypes: np.array = None,
+    labels_dict: dict = {0.0:"fold", 1.0: "regular", 2.0: "gap", 3.0: "p_fold", 4.0: "p_reg", 5.0: "p_gap"}
+    ) -> [list, list]:
 
     """
     Args: pretrained model; n_neighbors, min_dist, n_components for UMAP algo
@@ -98,10 +101,21 @@ def visualize_embeddings(
     model.to(device)
     outs = torch.Tensor().to(device)
     labels = torch.Tensor().to(device)
+
     for data, data_2, label in dataloader:
         torch.no_grad()
         outs = torch.cat((outs, model(data.float(),data_2.float()).squeeze()), 0)
         labels = torch.cat((labels, label), 0)
+    
+    labels = labels.detach().cpu().repeat(2).numpy()
+    outs = outs.detach().cpu()
+    feature_size = 0.5*outs.size()[1]
+    outs = torch.cat((outs[:, :int(feature_size)], outs[:, int(feature_size):]), 0)
+
+    if prototypes is not None:
+        labels_prototypes = [(np.max(labels) + 1 + i).astype(float) for i, proto in enumerate(prototypes)]
+        labels = np.concatenate((labels, labels_prototypes))
+        outs = torch.cat((outs, torch.Tensor(prototypes)), 0)
 
     #Scale inputs to ease UMAP operation (m = 0, std = 1)
     scaler = StandardScaler()
@@ -112,16 +126,25 @@ def visualize_embeddings(
     sns.set(style='white', context='poster', rc={'figure.figsize':(14,10)})
 
     clusterable_embedding = umap.UMAP(
-        n_neighbors=n_neighbors,
+        n_neighbors = n_neighbors,
         min_dist = min_dist,
-        n_components=n_components,
-        random_state=47,
+        n_components = n_components,
+        random_state = 47,
     ).fit_transform(out_np)
 
     df = pd.DataFrame()
     df["x"] = clusterable_embedding[:,0]
     df["y"] = clusterable_embedding[:,1]
     df["z"] = clusterable_embedding[:,2]
+    df["labels"] = labels
+    df["labels"] = df["labels"].replace(labels_dict)
 
-    fig = px.scatter_3d(df, x = "x", y = "y", z = "z", color = labels.cpu().numpy())
+    if prototypes is None:
+        means = df.groupby("labels").mean()
+        means["labels"] = ["p_fold", "p_regular", "p_gap"]
+        df = df.append(means)
+
+    fig = px.scatter_3d(df, x = "x", y = "y", z = "z", color = "labels")
     fig.show()
+
+    return clusterable_embedding, labels, df.means.to_numpy()

@@ -191,7 +191,7 @@ class VICRegCNN_2(nn.Module):
         self.backbone_1 = backbone_1
         self.backbone_2 = backbone_2
 
-        self.backbone_1.fc = nn.Linear(in_features=features_dim, out_features = features_dim)
+        self.backbone_1.fc = nn.Linear(in_features = features_dim, out_features = features_dim)
         self.backbone_2.fc = nn.Linear(in_features = features_dim, out_features = features_dim)
 
         # projector
@@ -217,7 +217,7 @@ class VICRegCNN_2(nn.Module):
             X (torch.Tensor): a batch of images in the tensor format.
         """
         z1 = self.projector(self.backbone_1(timage_1))
-        z2 = self.projector(self.backbone_2(timage_1))
+        z2 = self.projector(self.backbone_2(timage_2))
 
         out = torch.cat((z1, z2), 1)
         return out

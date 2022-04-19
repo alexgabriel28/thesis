@@ -18,6 +18,8 @@ from skimage.color import gray2rgb
 from skimage import measure
 from PIL import Image
 
+from sklearn.model_selection import train_test_split
+
 import augly.image as imaugs
 
 from tqdm.auto import tqdm
@@ -160,10 +162,13 @@ def collate_CNN_2(batch):
   timage_list_1, timage_list_2, label_list = [], [], []
   for timage, labels in batch:
     t = tensor_img_transforms.Transform()
+
     y1, y2 = t(timage)
-    timage_list_1.append(y1)
-    timage_list_2.append(y2)
-    label_list.append(labels)
+    y3, y4 = t(timage)
+
+    timage_list_1.extend([y1, y3])
+    timage_list_2.extend([y2, y4])
+    label_list.extend([labels for i in range(2)])
 
   elem_1 = timage_list_1[0]
   numel_1 = sum(x.numel() for x in timage_list_1)
@@ -439,7 +444,7 @@ class LightDataset(Dataset):
     return self.image_list[idx], self.graph_list[idx]
 
 ################################################################################
-#ImageDataset -> takes graph_list and image_list ###############################
+#ImageDataset -> takes image_dir ###############################################
 ################################################################################
 class ImageDataset(Dataset):
   def __init__(self, root_dir):
@@ -470,13 +475,17 @@ class ImageDataset(Dataset):
     self.class_id = torch.tensor([self.class_id])
     return self.image_list[idx], self.class_id
 
-from torch_geometric.utils import degree
-
 #Train-test-split: 80:20
-def train_test_split(dataset, test_ratio = 0.2):
-    train_size = int((1-test_ratio) * len(dataset))
-    test_size = len(dataset) - train_size
-    train_dataset, test_dataset = torch.utils.data.random_split(
-      dataset, [train_size, test_size]
-      )
+def train_test_split(dataset, test_ratio = 0.2, stratify = True):
+    if stratify == False:
+        train_size = int((1-test_ratio) * len(dataset))
+        test_size = len(dataset) - train_size
+        train_dataset, test_dataset = torch.utils.data.random_split(
+          dataset, [train_size, test_size]
+          )
+    else:
+        labels = [label for tensor, label in iter(dataset)]
+        train_indices, test_indices = train_test_split(list(range(len(labels))), test_size=test_ratio, stratify=labels)
+        train_dataset = torch.utils.data.Subset(dataset, train_indices)
+        test_dataset = torch.utils.data.Subset(dataset, test_indices)
     return train_dataset, test_dataset
