@@ -4,7 +4,7 @@ setup(
     author = "Alexander Gabriel",
     description = "Package MT @ ITA RWTH - Continual Learning x Composite Prod",
     name = "thesis",
-    version = "0.1.2",
+    version = "0.1.3",
     packages = find_packages(include =["thesis", "thesis.*"]),
     dependency_links = [
       "https://data.pyg.org/whl/torch-1.9.0+cu102.html"
@@ -17,7 +17,8 @@ setup(
       "pyment",
       "augly",
       "Pillow >=8.2.*",
-      "umap-learn"
+      "umap-learn",
+      "wandb"
       ],
 )
 
