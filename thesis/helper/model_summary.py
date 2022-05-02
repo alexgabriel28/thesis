@@ -1,4 +1,13 @@
+import torch
 def summary(model):
+  """
+  Creates model summary
+  Args
+      model: torch.nn.Module: a torch model
+  Returns
+      [Any] -> .txt file with a summary of the parameters of the model,
+          with specification of trainable and non-trainable parameters
+  """
   params = list(model.named_parameters())
   line_sep = "-------------------------------------------------------------------------------------------------"
   print(line_sep)

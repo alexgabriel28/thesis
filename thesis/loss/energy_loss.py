@@ -1,3 +1,58 @@
+import torch
+import numpy as np
+
+def energy_logit_loss(
+                reps: torch.Tensor = None,
+                labels: torch.Tensor = None,
+                alpha: float = 0.3,
+                fraction: float = 1.,
+                num_classes: int = 5,
+                ) -> torch.Tensor:
+    """
+    Loss function for energy-based continual learning on a vanilla ResNet18
+    Args:
+        reps: torch.Tensor: (Default value = None) Features as output by the model
+        labels: torch.Tensor: (Default value = None) Labels as given by dataloader
+        alpha: float: (Default value = 0.3)
+            Scaling parameter loss = alpha*pos_energy + (1-alpha)*neg_energy
+        fraction: float: (Default value = 1.) Fraction of labelled data to be used
+        num_classes: int: (Default value = 5) Total number of classes in Dataset
+    Returns:
+        torch.Tensor: scalar loss value (as energy, i.e., min == best)
+    """
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    assert (alpha >= 0) & (alpha <=1), "Alpha must be in [0,1]"
+    
+    # For numerical stability of exp function
+    eps = torch.Tensor([1e-08]).to(device)
+    Eps = torch.Tensor([1.797693134862315e+308]).to(device)
+
+    # Use only the fraction of data, specified in fraction -> semi-supervised
+    if fraction < 1.:
+        erase_v = (torch.rand(size=(reps.size()[0], 1)) < fraction).to(device).float()
+        reps = erase_v * reps
+
+    # Finds which instances are of the same class
+    pos_values = torch.Tensor().to(device)
+    neg_values = torch.Tensor().to(device)
+    rep_neg = torch.Tensor().to(device)
+    reps_temp = torch.Tensor().to(device)
+    labels_unique = np.unique(labels.detach().cpu().numpy())
+    for i, rep in enumerate(reps):
+        pos_values = torch.cat((pos_values, rep[labels[i]].unsqueeze(dim = 0)))
+        index = np.random.choice(np.delete(labels_unique, np.where(labels_unique == labels[i].detach().cpu().numpy())))
+        rep_neg = reps[index]
+        neg_values = torch.cat((neg_values, rep_neg.unsqueeze(dim = 0)))
+    energy = alpha*pos_values - (1-alpha)*torch.logsumexp(neg_values, dim = 1, keepdim = True)
+    # Calc final sim loss
+    loss =  torch.mean(energy)
+    
+    # Return overall loss
+    return loss.to(reps.device)
+
+################################################################################
+# Energy loss function for siamese network -> cosine similarity as Energy
+################################################################################
 def energy_loss(
     reps: torch.Tensor = None, 
     labels: torch.Tensor = None,

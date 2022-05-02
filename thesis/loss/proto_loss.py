@@ -1,3 +1,4 @@
+import torch
 def proto_sim(reps: torch.Tensor,
                 labels: torch.Tensor,
                 prototypes: torch.Tensor,
