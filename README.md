@@ -2,7 +2,7 @@
 This is the repo for the master thesis at ITA - RWTH Aachen
 
 Please note, that the code is still heavy work in progress and thus might not be fully operational <br />
-Some preliminary experiments have been conducted with Graph Neural Networks and Superpixel Image Segmentation, this code can be found on branch:
+Some preliminary experiments have been conducted with Graph Neural Networks and Superpixel Image Segmentation, this code can be found on branch "graphs"
 
 ## Abstract
 Major breakthroughs in machine learning have led to its wide-spread use in various fields of industry, including automotive and retail, showing (super-) human performance in prediction tasks on structured data like image classification. Composites production is an especially promising field of application, as it remains dominated by human labor and a strong demand for expert-level human domain knowledge, therefore benefiting strongly from process automation.
