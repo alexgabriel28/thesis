@@ -18,3 +18,10 @@ Potential model structures are developed and juxtaposed according to state-of-th
 •	Support of unsupervised, self-supervised or semi-supervised training settings <br />
 
 The most promising model architecture is then chosen and empirically-iteratively refined. The proposed model is benchmarked against a conventional CNN-classifier in supervised, as well as self-supervised training regime with access to all training data at once, acting as the upper bound. A comparison to selected state-of-the-art models for continual learning settings is performed, using a variety of classes of fiber lay-up images. <br />
+
+## General approach
+The general idea focusses on combining self-supervised learning approaches, e.g., the recently published VICReg-Approach with Prototypical losses.
+The prototypes of previous classes act like a regularization against Catastrophic forgetting and allow the model keep learning continuously.
+Incorporation of VICReg allows for semi-supervised training settings and for learning richer representations from the underlying data.
+![image](https://user-images.githubusercontent.com/96831420/167251601-67681478-3400-42bc-a453-060f3a6dc912.png)
+
