@@ -1,6 +1,9 @@
 # Thesis: Continual Learning and Catastrophic Forgetting in Composites Production
 This is the repo for the master thesis at ITA - RWTH Aachen
 
+Please note, that the code is still heavy work in progress and thus might not be fully operational
+Some preliminary experiments have been conducted with Graph Neural Networks and Superpixel Image Segmentation, this code can be found on branch:
+
 ## Abstract
 Major breakthroughs in machine learning have led to its wide-spread use in various fields of industry, including automotive and retail, showing (super-) human performance in prediction tasks on structured data like image classification. Composites production is an especially promising field of application, as it remains dominated by human labor and a strong demand for expert-level human domain knowledge, therefore benefiting strongly from process automation.
 In general, Convolutional Neural Networks (CNN) are used for image classification tasks. CNN require huge amounts of human-labelled data to reach a reliable prediction accuracy, assuming that the underlying data distribution is stationary and identically and independently distributed. All class labels must be known in advance and represented in the training dataset for the model to work as intended. <br />
