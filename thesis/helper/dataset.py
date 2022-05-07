@@ -267,7 +267,7 @@ def create_dataloader_cont(
 
     for i, classes in enumerate(cls_list):
         image_dir = root_dir
-        image_dataset = ImageDataset(image_dir, classes = classes)
+        image_dataset = ContImageDataset(image_dir, classes = classes)
 
         labels = [label.numpy() for tensor, label in iter(image_dataset)]
         train_indices, test_indices = train_test_split(list(range(len(labels))), test_size=0.2, stratify=labels)

@@ -72,7 +72,7 @@ def save_train_specs(model: torch.nn.Module,
         print(model, file = f)
         print("-------------------------------------------------------------------------", file = f)
         print("Parameter Summary: \n", file = f)
-        summary(model, f = f)
+        summary(model)
         print("-------------------------------------------------------------------------", file = f)
         print("Train Specifications:", file = f)
         f.write(repr(train_dict) + "\n")
