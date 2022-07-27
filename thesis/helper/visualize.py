@@ -20,9 +20,23 @@ def visualize_embeddings(
     min_dist: int = 0,
     n_components: int = 3,
     prototypes: np.array = None,
-    labels_dict: dict = {0.0:"fold", 1.0: "gap", 2.0: "hole", 3.0: "rabbet", 4.0: "regular"},
+    labels_dict: dict = {
+        0.0: "regular", 
+        1.0:"fold", 
+        2.0: "gap", 
+        3.0: "hole", 
+        4.0: "rabbet",
+        5.0: "p_regular",
+        6.0: "p_fold",
+        7.0: "p_gap",
+        8.0: "p_hole",
+        9.0: "p_rabbet"
+        },
     projected: bool = True,
+    outs_storage: torch.Tensor = None,
+    label_storage: torch.Tensor = None,
     ) -> [list, list]:
+
     """
     Args: pretrained model; n_neighbors, min_dist, n_components for UMAP algo
 
@@ -38,7 +52,6 @@ def visualize_embeddings(
     model.to(device)
     outs = torch.Tensor().to(device)
     labels = torch.Tensor().to(device)
-
     activation = {}
     def get_activation(name):
         def hook(model, input, output):
@@ -48,29 +61,31 @@ def visualize_embeddings(
     for data, data_2, label in dataloader:
         torch.no_grad()
         if projected == False:
-            model.backbone_1.fc.register_forward_hook(get_activation("fc_1"))
-            model.backbone_2.fc.register_forward_hook(get_activation("fc_2"))
-            outs_proj = model(data.float(),data_2.float()).squeeze()
+            model.fc.register_forward_hook(get_activation("fc_1"))
+            outs_proj = model(torch.cat((data.float(), data_2.float())))
 
             a = activation["fc_1"]
-            b = activation["fc_2"]
-            features = torch.cat((a, b), 1)
-            outs = torch.cat((outs, features), 0)
-            labels = torch.cat((labels, label), 0)
+
+            outs = torch.cat((outs, a), 0)
+            labels = torch.cat((labels, label.repeat(2)), 0)
 
         else:
-            outs = torch.cat((outs, model(data.float(), data_2.float()).squeeze().to(device)), 0)
-            outs = outs.detach().cpu()
-            labels = torch.cat((labels, label), 0)
+            outs_1 = model(data.float())
+            outs_2 = model(data_2.float())
+            outs_cat = torch.cat((outs_1, outs_2)).to(device)
+            outs = torch.cat((outs, outs_cat)).to(device)
+            labels = torch.cat((labels, label.repeat(2)), 0)
 
-    feature_size = 0.5*outs.size()[1]
-    outs = torch.cat((outs[:, :int(feature_size)], outs[:, int(feature_size):]), 0)
-    labels = labels.detach().cpu().repeat(2).numpy()
+    outs = torch.cat((outs, outs_storage))
+    labels = torch.cat((labels, label_storage))
+    #feature_size = 0.5*outs.size()[1]
+    #outs = torch.cat((outs[:, :int(feature_size)], outs[:, int(feature_size):]), 0)
+    labels = labels.detach().cpu().numpy()
 
     if prototypes is not None:
         labels_prototypes = [(np.max(labels) + 1 + i).astype(float) for i, proto in enumerate(prototypes)]
         labels = np.concatenate((labels, labels_prototypes))
-        outs = torch.cat((outs, protos), 0)
+        outs = torch.cat((outs, prototypes), 0)
 
     #Scale inputs to ease UMAP operation (m = 0, std = 1)
     scaler = StandardScaler()
@@ -107,4 +122,3 @@ def visualize_embeddings(
         return clusterable_embedding, labels
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-embed, labels = visualize_embeddings(model, dataloader, prototypes = None, projected = False)

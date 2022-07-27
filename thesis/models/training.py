@@ -1666,3 +1666,340 @@ def resnet18_training(
             print(f"Using dataloader no. {epochs_limit_counter}")
 
     return loss_list, train_acc_list
+
+################################################################################
+#ProReC training ###############################################################
+################################################################################
+def resnet18_training(
+    model: torch.nn.Module = None,
+    dataloader_list: list = dataloader_list,
+    dataloader_test_list: list = dataloader_test_list,
+    total_classes: int = 5,
+    cls_per_run: int = 2,
+    epochs: int = 100,
+    epoch_list: list = [25, 50, 75, 100],
+    sim_loss_weight: float = 25.,
+    cov_loss_weight: float = 25.,
+    var_loss_weight: float = 1.,
+    dist_loss_weight: float = 1.,
+    proto_reg_loss_weight: float = 1.,
+    loss_fn: str = "proto_vicreg",
+    proto_feature_size: int = 256,
+    proj_hidden_size: int = 512,
+    proj_layers: int = 1,
+    max_storage_per_cls: int = 64,
+    new_samples_batch: int = 24,
+    store = "random",
+    lr_scheduler: str = "exp",
+    lr: float = 0.00001,
+    lr_proj: float = 0.001,
+    gamma: float = 0.9,
+    path: str = "/content/drive/MyDrive/MT Gabriel/model_runs/",
+    run_name: str = None,
+    **kwargs,
+    ) -> [list, list]:
+    torch.autograd.set_detect_anomaly(True)
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model.to(device)
+    model.train()
+
+    num_features = model.fc.in_features
+
+    layers_dict = OrderedDict()
+    layers = []
+    layers.append(nn.Linear(num_features, proj_hidden_size))
+    layers.append(nn.ReLU())
+    while len(layers) < proj_layers*2:
+        layers.append(nn.Linear(proj_hidden_size, proj_hidden_size))
+        layers.append(nn.ReLU())
+    layers.append(nn.Linear(proj_hidden_size, proj_hidden_size))
+    # layers.append(nn.Linear(proj_hidden_size, proto_feature_size))
+
+    for k, v in enumerate(layers):
+        layers_dict[str(k)] = v
+        
+    model.fc = nn.Sequential(layers_dict)
+    model.to(device)
+
+    proj_params = []
+    base_params = []
+    for i,j in model.named_parameters():
+        if "fc" in i:
+            proj_params.append(j)
+        else:
+            base_params.append(j)
+
+    optimizer = torch.optim.Adam([
+                                  {"params":base_params},
+                                  {"params":proj_params, "lr" : lr_proj},
+    ], lr = lr)
+
+    # if lr_scheduler == "exp":
+    #   scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma = gamma)
+
+    train_acc_list = []
+    loss_list = []
+    forgetting_per_cls_list = []
+    forgetting_m_list = []
+
+    # Initialize counters and dataloaders
+    epochs_limit = 0
+    epochs_limit_counter = 0
+
+    num_classes = cls_per_run +  epochs_limit_counter
+    #num_classes = num_classes
+
+    epochs_limit = epoch_list[epochs_limit_counter]
+    dataloader = dataloader_list[epochs_limit_counter]
+    dataloader_test = dataloader_test_list[epochs_limit_counter]
+    protos = torch.Tensor().to(device)
+    protos_activation = torch.Tensor().to(device)
+
+    data_storage = torch.Tensor().to(device)
+    label_storage = torch.Tensor().to(device)
+    outs_storage = torch.Tensor().to(device)
+
+    test_acc_lists = []
+
+    try:
+        activation = {}
+        def get_activation(name):
+            def hook(model, input, output):
+                activation[name] = output.detach()
+            return hook
+
+        for epoch in tqdm(range(epochs)):
+            corrects = torch.Tensor([0]).to(device)
+            total = torch.Tensor([0]).to(device)
+            epoch_loss_list = []
+            epoch_uncertainty_loss_list = []
+
+            model.avgpool.register_forward_hook(get_activation("avgpool"))
+
+            # Training loop
+            for data_1, data_2, label in tqdm(dataloader, leave = False):
+                optimizer.zero_grad()
+                data_2 = data_2.to(device)
+                labels = label.to(device)
+
+                labels = labels.view(labels.size(dim = 0), 1).repeat(2, 1).squeeze()
+                data = torch.cat((data_1, data_2), dim = 0)
+                outs = model(data)
+                # outs_1 = model(data_1)
+                # outs_2 = model(data_2)
+                # outs = torch.cat((outs_1, outs_2), 0)
+                
+                # if data_storage.size()[0] > 10:
+                #     outs_storage = model(data_storage)
+
+                if loss_fn == "proto_vicreg":
+                    # print(f"Protos@loss:{protos}")
+                    act = activation["avgpool"]
+                    loss, protos_out, protos_act = proto_vicreg_loss_func(
+                        model,
+                        outs, labels, 
+                        num_classes = num_classes,  
+                        protos = protos,
+                        protos_act = protos_activation,
+                        act = act.squeeze(),
+                        sim_loss_weight = sim_loss_weight,
+                        var_loss_weight = var_loss_weight,
+                        cov_loss_weight = cov_loss_weight,
+                        dist_loss_weight = dist_loss_weight,
+                        proto_reg_loss_weight = proto_reg_loss_weight,
+                        outs_storage = data_storage,
+                        label_storage = label_storage,
+                        )
+
+                    protos = protos_out.detach().clone()
+                    protos_activation = protos_act.detach().clone()
+                    
+                    preds, labels_total = get_prediction(
+                        outs, labels, 
+                        outs_storage = torch.Tensor().to(device), 
+                        label_storage = torch.Tensor().to(device), 
+                        protos = protos.detach(),
+                        )
+
+                # Calculate Acc
+                corrects += torch.sum(preds == labels_total)
+                total += torch.numel(labels)
+                print(f"Loss: {loss}")
+
+                loss.backward()
+                optimizer.step()
+                torch.cuda.empty_cache()
+
+                epoch_loss_list.append(loss.detach().cpu().numpy())
+
+                if max_storage_per_cls > 0:
+                    if store == "random":
+                        # Store samples from intermediate layer
+                        for i in np.unique(labels.detach().cpu().numpy()):
+                            labels_half = labels[:int(labels.size()[0]/2)].detach()
+                            mask = i == labels_half.squeeze()
+                            # print(f"Storage Samples in cls {i}: {(i == label_storage.squeeze()).sum()}")
+                            # Check if > max_storage_per_cls samples per class -> drop the oldest
+                            new_samples = new_samples_batch
+                            keep_from_old = max_storage_per_cls - 2*new_samples
+                            if (i == label_storage.squeeze()).sum() >= max_storage_per_cls - 2*new_samples:
+                                data_storage = torch.cat(
+                                    (
+                                      data_storage[i != label_storage.squeeze()],
+                                      data_storage[i == label_storage.squeeze()][-keep_from_old:]
+                                    )
+                                )
+                                label_storage = torch.cat(
+                                    (
+                                    label_storage[i != label_storage.squeeze()],
+                                    label_storage[i == label_storage.squeeze()][-keep_from_old:]
+                                    )
+                                )
+                            act = act.squeeze()
+                            act_1 = act[:int(labels.size()[0]/2)]
+                            act_2 = act[int(labels.size()[0]/2):]
+
+                            data_storage = torch.cat((data_storage, act_1[mask][:new_samples].detach()))
+                            data_storage = torch.cat((data_storage, act_2[mask][:new_samples].detach()))
+                            label_storage = torch.cat((label_storage, labels_half[mask][:new_samples].repeat(2)))
+
+                    elif store == "nearest":
+                        for i in np.unique(labels.detach().cpu().numpy()):
+                            labels_half = labels[:int(labels.size()[0]/2)].detach()
+                            mask = i == labels_half.squeeze()
+                            # print(f"Storage Samples in cls {i}: {(i == label_storage.squeeze()).sum()}")
+                            # Check if > max_storage_per_cls samples per class -> drop the oldest
+                            num_labels = np.unique(labels.detach().cpu().numpy())
+                            new_samples = int(new_samples_batch/len(num_labels))
+                            keep_from_old = max_storage_per_cls - 2*new_samples_batch
+                            if (i == label_storage.squeeze()).sum() >= max_storage_per_cls - 2*new_samples_batch:
+                                data_storage = torch.cat(
+                                    (
+                                      data_storage[i != label_storage.squeeze()],
+                                      data_storage[i == label_storage.squeeze()][-keep_from_old:]
+                                    )
+                                )
+                                label_storage = torch.cat(
+                                    (
+                                    label_storage[i != label_storage.squeeze()],
+                                    label_storage[i == label_storage.squeeze()][-keep_from_old:]
+                                    )
+                                )
+
+                            act = act.squeeze()
+                            print(act)
+
+                            act_1 = act[:int(labels_half.size()[0])]
+                            act_2 = act[int(labels_half.size()[0]):]
+
+                            act_1_dist = torch.mean(F.mse_loss(act_1[mask], 
+                                                 protos_activation[i].repeat(act_1[mask].size()[0], 1),
+                                                 reduction = "none"
+                                                 ), dim = 1)
+                            act_2_dist = torch.mean(F.mse_loss(act_2[mask], 
+                                                 protos_activation[i].repeat(act_2[mask].size()[0], 1),
+                                                 reduction = "none"
+                                                 ), dim = 1)
+                            k_1 = np.min([new_samples, torch.numel(act_1_dist)])
+                            k_2 = np.min([new_samples, torch.numel(act_2_dist)])
+                            _, idx_1 = torch.topk(act_1_dist, k = k_1, largest = False)
+                            _, idx_2 = torch.topk(act_2_dist, k = k_2, largest = False)
+
+                            data_storage = torch.cat((data_storage, act_1[mask][idx_1].detach()))
+                            data_storage = torch.cat((data_storage, act_2[mask][idx_2].detach()))
+                            label_storage = torch.cat((label_storage, labels_half[mask][idx_1]))
+                            label_storage = torch.cat((label_storage, labels_half[mask][idx_2]))
+
+            # Calculate epoch accuracy
+            epoch_acc = (corrects/total).detach().cpu().numpy()
+
+            train_acc_list.append(epoch_acc)
+            loss_list.append(np.mean(epoch_loss_list))
+            print(f"Epoch: {epoch} | Epoch_acc: {epoch_acc} | Loss: {np.mean(epoch_loss_list)}")
+
+            test_model = copy.deepcopy(model)
+            test_acc, test_acc_list = resnet_eval(
+                test_model, 
+                dataloader_test, 
+                num_classes = num_classes,
+                protos = protos,
+                loss_fn = loss_fn,
+                path = path + run_name + ".txt"
+                )
+            test_acc_lists.append(test_acc_list)
+            # Calculate Forgetting
+            forgetting_m, forgetting_per_cls = forgetting_metric(
+                test_acc_lists, num_classes, total_classes, cls_per_run,
+                )
+            forgetting_m_list.append(forgetting_m)
+            forgetting_per_cls_list.append(forgetting_per_cls)
+
+            overall_metric = 0.5*(1-forgetting_m)+0.5*test_acc
+            if epoch == epoch_list[-1] - 1:
+                labels_dict = {
+                    0.0: "regular", 
+                    1.0: "fold", 
+                    2.0: "gap", 
+                    3.0: "und", 
+                    4.0: "regular_ncf",
+                    5.0: "fold_ncf",
+                    6.0: "gap_ncf",
+                    7.0: "und_ncf",
+                    8.0: "p_reg",
+                    9.0: "p_fold",
+                    10.0: "p_gap",
+                    11.0: "p_und",
+                    12.0:"p_reg_ncf",
+                    13.0:"p_fold_ncf",
+                    14.0: "p_gap_ncf",
+                    15.0:"p_und_ncf"
+                    }
+
+                visualize_embeddings(
+                    test_model, 
+                    dataloader_test, 
+                    prototypes = protos,
+                    outs_storage = torch.Tensor().to(device),
+                    label_storage = torch.Tensor().to(device),
+                    projected = True,
+                    labels_dict = labels_dict,
+                    )
+                
+            wandb.log({
+                "train_acc":epoch_acc, 
+                "test_acc":test_acc, 
+                "loss":np.mean(epoch_loss_list),
+                "forgetting":forgetting_m,
+                "test_acc_list":test_acc_list,
+                "overall_metric":overall_metric,
+                })
+            torch.cuda.empty_cache()
+
+            ########################################################################
+            # For continual learning setting #######################################
+            ########################################################################
+            # Update counters, write Classification report to file, re_allocate
+            # dataloaders
+
+            if (epoch == epochs_limit - 1) & (epochs_limit != epoch_list[-1]):
+                test_model = copy.deepcopy(model)
+
+                # Update counters and dataloaders
+                epochs_limit_counter += 1
+                num_classes = cls_per_run + epochs_limit_counter
+                epochs_limit = epoch_list[epochs_limit_counter]
+                dataloader = dataloader_list[epochs_limit_counter]
+                dataloader_test = dataloader_test_list[epochs_limit_counter]
+
+                print(f"Using dataloader no. {epochs_limit_counter}")
+        
+        torch.save(test_acc_lists, path + run_name + "_test_acc.txt")
+        torch.save(forgetting_per_cls_list, path + run_name + "_forgetting_list.txt")
+
+        run.log_artifact(path + run_name + "_test_acc.txt", type = "test_acc_lists")
+        run.log_artifact(path + run_name + "_test_acc.txt", type = "forgetting_list")
+        return loss_list, test_acc_lists, forgetting_m_list, forgetting_per_cls_list, model, protos
+        
+    except KeyboardInterrupt:
+        return loss_list, test_acc_lists, forgetting_m_list, forgetting_per_cls_list, model, protos

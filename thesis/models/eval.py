@@ -331,7 +331,8 @@ def cal_linclf_acc(model: torch.nn.Module = None,
 def resnet_eval(resnet18_model: torch.nn.Module, 
                 dataloader_test: list, 
                 num_classes: int, 
-                loss_fn: str, 
+                loss_fn: str,
+                protos: torch.Tensor,
                 path:str) -> list:
     """
     Evaluates ResNet18 model on classification task
@@ -367,13 +368,27 @@ def resnet_eval(resnet18_model: torch.nn.Module,
         labels = label.to(device)
         outs_1 = resnet18_model(data_1)
         outs_2 = resnet18_model(data_2)
-        outs = torch.cat((outs_1, outs_2), 0)
+        outs = torch.cat((outs_1, outs_2), 0).to(device)
 
         labels = labels.view(labels.size(dim = 0), 1).repeat(2, 1).squeeze()
+        
         if loss_fn == "entropy":
             _, preds = torch.max(outs, 1)
+
         elif loss_fn == "energy":
-            _, preds = torch.max(outs, 1)
+            _, preds = torch.min(outs, 1)
+
+        elif loss_fn == "proto_vicreg":
+            protos = protos.detach()
+            dists = torch.Tensor().to(device)
+            for proto in protos:
+                mse = F.mse_loss(outs, 
+                                proto.repeat(outs.size()[0], 1), 
+                                reduction = "none").sum(dim = 1, keepdim = True)
+                dists = torch.cat((dists, mse), 1)
+
+            _, preds = torch.min(dists, 1)        
+
 
         labels_all = torch.cat((labels_all, labels))
         preds_all = torch.cat(((preds_all, preds)))
@@ -393,10 +408,48 @@ def resnet_eval(resnet18_model: torch.nn.Module,
         test_acc_list.append(i/j)
     labels_all, preds_all = labels_all.detach().cpu().numpy(), preds_all.detach().cpu().numpy()
 
-    with open(path, "a") as f:
-        print(classification_report(labels_all, preds_all), file = f)
+    # with open(path, "a") as f:
+    #     print(classification_report(labels_all, preds_all), file = f)
         # Sanity check
-        for i, entry in enumerate(test_acc_list):
-            print(f"Class: {i} | Test Acc: {entry}", file = f)
-        print(f"Overall Test Acc: {np.sum(test_acc_list)/num_classes:.2}", file = f)
-    return test_acc_list
+        # for i, entry in enumerate(test_acc_list):
+        #     print(f"Class: {i} | Test Acc: {entry}", file = f)
+        # print(f"Overall Test Acc: {np.sum(test_acc_list)/num_classes:.2}", file = f)
+    test_acc = np.mean(test_acc_list)
+    for i, entry in enumerate(test_acc_list):
+        print(f"Class: {i} | Test Acc: {entry}")
+    print(f"Overall Test Acc: {test_acc:.2}")
+    return test_acc, test_acc_list
+
+# Get predcition for eval
+def get_prediction(outs, labels, outs_storage, label_storage, protos):
+    dists = torch.Tensor().to(device)
+    outs_total = torch.cat((outs, outs_storage))
+    labels_total = torch.cat((labels, label_storage))
+    for proto in protos:
+        mse = F.mse_loss(outs_total, 
+                        proto.repeat(outs_total.size()[0], 1), 
+                        reduction = "none").sum(dim = 1, keepdim = True)
+        dists = torch.cat((dists, mse), 1)
+    _, preds = torch.min(dists, 1)
+    return preds, labels_total
+
+# Calculate Forgetting Metric
+def forgetting_metric(test_acc_lists, num_classes, total_classes, cls_per_run):
+    acc_array = np.zeros(shape = (len(test_acc_lists), total_classes))
+    for i, epoch_list in enumerate(test_acc_lists):
+        for j, entry  in enumerate(epoch_list):
+            acc_array[i, j] = entry
+    forgetting_per_cls = []
+
+    for i in range(acc_array.shape[1]):
+        if np.max(acc_array[:, i]) > 0:
+            forgetting_per_cls.append(np.max(acc_array[:, i]) - acc_array[-1, i]/np.max(acc_array[:, i]))
+        else:
+            forgetting_per_cls.append(0)            
+    previous_cls = num_classes - cls_per_run
+    
+    if previous_cls > 0:
+        forgetting_metric = np.mean(forgetting_per_cls[:previous_cls])
+    else: 
+        forgetting_metric = 0
+    return forgetting_metric, forgetting_per_cls

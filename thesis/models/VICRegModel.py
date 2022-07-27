@@ -6,7 +6,7 @@ import torch.nn as nn
 
 import torchvision
 from torchvision.models import resnet50
-from torchvision.models import 
+from torchvision.models import resnet18
 
 import torch_geometric
 
@@ -222,3 +222,76 @@ class VICRegCNN_2(nn.Module):
 
         out = torch.cat((z1, z2), 1)
         return out
+
+class VICReg_Class(nn.Module):
+    def __init__(
+        self,
+        features_dim: int = 512,
+        proj_output_dim: int = 4096,
+        proj_hidden_dim: int = 4096,
+        sim_loss_weight: float = 25,
+        var_loss_weight: float = 25,
+        cov_loss_weight: float = 1,
+        backbone_1 = torchvision.models.resnet18(pretrained = True, progress = True, zero_init_residual=True),
+        backbone_2 = torchvision.models.resnet18(pretrained = True, progress = True, zero_init_residual=True),
+        num_classes = 5,
+        **kwargs
+    ):
+
+        """Implements VICReg with two CNN branches (https://arxiv.org/abs/2105.04906)
+        Args:
+            proj_output_dim (int): number of dimensions of the projected features.
+            proj_hidden_dim (int): number of neurons in the hidden layers of the projector.
+            sim_loss_weight (float): weight of the invariance term.
+            var_loss_weight (float): weight of the variance term.
+            cov_loss_weight (float): weight of the covariance term.
+            backbone_1, backbone_2 (torch.nn.Module): models of the respective branches
+        """
+
+        super().__init__()
+
+        self.sim_loss_weight = sim_loss_weight
+        self.var_loss_weight = var_loss_weight
+        self.cov_loss_weight = cov_loss_weight
+        self.backbone_1 = backbone_1
+        self.backbone_2 = backbone_2
+
+        self.backbone_1.fc = nn.Linear(in_features = features_dim, out_features = features_dim)
+        self.backbone_2.fc = nn.Linear(in_features = features_dim, out_features = features_dim)
+
+        self.clf = nn.Linear(in_features = features_dim, out_features = num_classes)
+
+        # projector
+        self.projector = nn.Sequential(
+            nn.Linear(features_dim, proj_hidden_dim),
+            nn.BatchNorm1d(proj_hidden_dim),
+            nn.ReLU(),
+            nn.Linear(proj_hidden_dim, proj_hidden_dim),
+            nn.BatchNorm1d(proj_hidden_dim),
+            nn.ReLU(),
+            nn.Linear(proj_hidden_dim, proj_output_dim),
+        )
+
+    def forward(
+        self, 
+        timage_1: torch.Tensor, 
+        timage_2: torch.Tensor, 
+        *args, 
+        **kwargs):
+      
+        """Performs the forward pass of the backbones and the projectors.
+        Args:
+            X (torch.Tensor): a batch of images in the tensor format.
+        """
+        h_1 = self.backbone_1(timage_1)
+        h_2 = self.backbone_2(timage_2)
+        z1 = self.projector(h_1)
+        z2 = self.projector(h_2)
+
+        z_cls_1 = self.clf(h_1)
+        z_cls_2 = self.clf(h_2)
+
+        out = torch.cat((z1, z2), 1)
+        out_clf = torch.cat((z_cls_1, z_cls_2), 0)
+        return out, out_clf
+
