@@ -34,7 +34,7 @@ Each experience consists of three classes incrementing forward by a step of one.
 ![image](https://user-images.githubusercontent.com/96831420/181208151-152f2dfe-bf3f-4402-b3a7-51cf8176068e.png)
 
 
-## Loss function and Approach
+## Loss function
 The new method is coined ProReC (Prototypical Regularization for Continual Learning)
 The loss function consists initially of five terms, three distance metrics and two information maximization terms: <br/>
 ![image](https://user-images.githubusercontent.com/96831420/181211092-d6920f4e-7f03-45c3-b769-640854586ad9.png)
