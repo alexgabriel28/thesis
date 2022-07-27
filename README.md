@@ -91,6 +91,7 @@ The model is able to remember classes better, with minimal storage size. The cla
 An interesting emerging propoerty is the finding that the model was able to separate the feature vectors in the representation space by material.
 This happened in a fully unsupervised way and could be replicated for different orders of class presentation. 
 After all, the information maximization terms might be useful in combining supervised and unsupervised information extraction and learning.
+This is visualized using UMAP below. For every test run that employed solely the Variance and Covariance term, the model clearly separated the feature vectors spatially. Using a fully unsupervised KMeans Clustering algorithm, the two clusters reached a prediction accuracy of > 99 % with respect to material.
 
 ![image](https://user-images.githubusercontent.com/96831420/181209452-e78b10fe-9639-4a79-8843-e5de25c9c730.png)
 
